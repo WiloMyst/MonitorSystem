@@ -6,6 +6,10 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ed.svg)
 ![AI](https://img.shields.io/badge/Spring%20AI-RAG-orange.svg)
 
+[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/WiloMyst/MonitorSystem/blob/master/LICENSE)
+
+[![GitHub repo size](https://img.shields.io/github/repo-size/WiloMyst/MonitorSystem)](https://github.com/WiloMyst/MonitorSystem)
+
 ## 项目简介
 本项目是一个面向大型企业数据中心、工业物联网（IoT）设备及通信基站的**高并发监控与智能排障平台**。
 系统集成了实时数据大屏采集、异步削峰处理、分布式缓存控制，并融合了大模型能力（RAG 检索增强生成与 Function Calling），为运维人员提供“全天候监控 + 智能故障诊断”的一站式闭环解决方案。
