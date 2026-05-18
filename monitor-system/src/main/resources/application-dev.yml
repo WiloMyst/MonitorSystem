@@ -1,0 +1,58 @@
+server:
+  port: 9090
+
+spring:
+  # 数据库连接配置 (本地 Docker 映射 3306)
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/monitor_system?serverTimezone=GMT%2B8&characterEncoding=utf-8&useSSL=false
+    username: root
+    password: ${DB_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # Redis 配置 (本地 Docker 映射 6379)
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: ${REDIS_PASSWORD:123456}
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+
+  # RabbitMQ 配置 (本地 Docker 映射 5672)
+  rabbitmq:
+    host: 127.0.0.1
+    port: 5672
+    username: admin
+    password: ${MQ_PASSWORD:123456}
+    listener:
+      simple:
+        acknowledge-mode: manual
+
+  # AI 配置 (本地开发直接用你的 Key)
+  ai:
+    zhipuai:
+      api-key: ${ZHIPU_API_KEY} # Spring 启动时会去系统环境里找这个变量
+      chat:
+        options:
+          model: glm-4-flash
+      embedding:
+        options:
+          model: embedding-2
+    # RAG 向量库配置
+    vectorstore:
+      redis:
+        uri: redis://:123456@127.0.0.1:6379/
+        index: monitor_manual_index
+        prefix: "rag:doc:"
+
+# MyBatis-Plus 日志配置 (开发环境打印 SQL 到控制台)
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+device:
+  alarm:
+    # 高温报警阈值
+    temp-threshold: 85.0

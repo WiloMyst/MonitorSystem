@@ -1,0 +1,27 @@
+# ======================== 全局通用配置 ========================
+spring:
+  profiles:
+    # 核心开关：dev 代表本地开发，prod 代表服务器部署
+    active: dev
+  application:
+    name: monitor-system
+
+  # 只有在 Spring Boot 3 中，为了支持 Spring AI 的 API 调用，需要配置此项
+  main:
+    allow-bean-definition-overriding: true
+
+# Sa-Token 配置 (通用部分)
+sa-token:
+  token-name: satoken
+  # token 有效期，单位秒 (默认30天，-1代表永久有效)
+  timeout: 2592000
+  # token 临时有效期 (指定时间内无操作就失效)，-1代表不限制
+  active-timeout: -1
+  # 是否允许同一账号多地同时登录
+  is-concurrent: true
+  # 在多人登录同一账号时，是否共享一个 token
+  is-share: true
+  # token 风格
+  token-style: uuid
+  # 是否从 cookie 中读取 token
+  is-read-cookie: false

@@ -1,0 +1,21 @@
+# ==========================================
+# Global Default Line Endings
+# ==========================================
+# Normalize all text files to LF (Linux/Mac style) on commit and checkout.
+# This is CRITICAL for Docker and Linux server deployments.
+* text=auto eol=lf
+
+# ==========================================
+# Windows Specific Scripts
+# ==========================================
+# Batch and command scripts must use CRLF (Windows style) to run correctly on Windows.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# ==========================================
+# Unix/Linux Specific Scripts
+# ==========================================
+# Shell scripts and Maven wrappers must use LF to avoid "\r command not found" errors in Docker.
+# Using '**/' ensures it applies to subfolders like monitor-system/.
+**/mvnw text eol=lf
+*.sh text eol=lf
