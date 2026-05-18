@@ -1,14 +1,12 @@
 # 分布式数据中心智能监控与预警平台
 
+[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/WiloMyst/MonitorSystem/blob/master/LICENSE)
+[![GitHub repo size](https://img.shields.io/github/repo-size/WiloMyst/MonitorSystem)](https://github.com/WiloMyst/MonitorSystem)
 ![Java](https://img.shields.io/badge/Java-17-blue.svg)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.4-brightgreen.svg)
 ![Vue](https://img.shields.io/badge/Vue-3.x-4fc08d.svg)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ed.svg)
 ![AI](https://img.shields.io/badge/Spring%20AI-RAG-orange.svg)
-
-[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/WiloMyst/MonitorSystem/blob/master/LICENSE)
-
-[![GitHub repo size](https://img.shields.io/github/repo-size/WiloMyst/MonitorSystem)](https://github.com/WiloMyst/MonitorSystem)
 
 ## 项目简介
 本项目是一个面向大型企业数据中心、工业物联网（IoT）设备及通信基站的**高并发监控与智能排障平台**。
