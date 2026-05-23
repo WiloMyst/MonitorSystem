@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 public class RagServiceImpl implements IRagService {
 
     private final ChatClient chatClient;
-    // 【架构升级】：这里的 VectorStore 会被 Spring 自动注入为 RedisVectorStore，无需我们再 new
+    // 这里的 VectorStore 会被 Spring 自动注入为 RedisVectorStore，无需我们再 new
     private final VectorStore vectorStore;
 
     @Value("classpath:/docs/maintenance_manual.txt")
@@ -37,7 +37,7 @@ public class RagServiceImpl implements IRagService {
     }
 
     /**
-     * 【企业级改造】：抽离出来的知识库同步方法。
+     * 抽离出来的知识库同步方法。
      * 在真实系统中，这个方法应该绑定给后台页面的一个“更新知识库”按钮，而不是每次启动服务器都跑一遍。
      */
     public void syncKnowledgeBaseToRedis() {
@@ -46,7 +46,9 @@ public class RagServiceImpl implements IRagService {
             // 1. 读取并切片
             TikaDocumentReader documentReader = new TikaDocumentReader(manualResource);
             List<Document> rawDocuments = documentReader.get();
-            TokenTextSplitter splitter = new TokenTextSplitter();
+            // 手动指定切片参数
+            // chunkSize = 800 (每个块最大长度), keepSeparator = true (保留分隔符)
+            TokenTextSplitter splitter = new TokenTextSplitter(800, 350, 5, 10000, true);
             List<Document> chunkedDocuments = splitter.apply(rawDocuments);
 
             // 2. 写入 Redis (如果文档较多，这里底层会自动分批调用 Embedding 模型并存入 Redis)
@@ -54,7 +56,7 @@ public class RagServiceImpl implements IRagService {
 
             System.out.println("========== [RAG] 同步成功！数据已永久持久化到 Redis 向量库 ==========");
         } catch (Exception e) {
-            System.err.println("❌ 知识库同步失败：" + e.getMessage());
+            System.err.println("知识库同步失败：" + e.getMessage());
         }
     }
 
