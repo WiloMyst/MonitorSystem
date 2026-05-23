@@ -1,4 +1,4 @@
-package org.example.monitorsystem.modules.ai.core;
+package org.example.monitorsystem.modules.ai.component;
 
 /**
  * Agent 工具调用的标准观察结果 (Observation)

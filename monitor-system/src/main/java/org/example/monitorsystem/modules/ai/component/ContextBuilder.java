@@ -1,4 +1,4 @@
-package org.example.monitorsystem.modules.ai.core;
+package org.example.monitorsystem.modules.ai.component;
 
 import org.springframework.stereotype.Component;
 import java.util.HashMap;

@@ -1,9 +1,9 @@
 package org.example.monitorsystem.modules.ai.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import org.example.monitorsystem.modules.ai.core.ContextBuilder;
-import org.example.monitorsystem.modules.ai.core.IntentClassifier;
-import org.example.monitorsystem.modules.ai.core.IntentType;
+import org.example.monitorsystem.modules.ai.component.ContextBuilder;
+import org.example.monitorsystem.modules.ai.component.IntentClassifier;
+import org.example.monitorsystem.modules.ai.component.IntentType;
 import org.example.monitorsystem.modules.device.entity.DeviceInfo;
 import org.example.monitorsystem.modules.ai.service.IRagService;
 import org.example.monitorsystem.modules.device.service.IDeviceInfoService;

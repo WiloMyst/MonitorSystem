@@ -1,4 +1,4 @@
-package org.example.monitorsystem.modules.ai.core;
+package org.example.monitorsystem.modules.ai.component;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;

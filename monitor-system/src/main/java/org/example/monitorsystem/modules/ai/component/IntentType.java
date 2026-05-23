@@ -1,4 +1,4 @@
-package org.example.monitorsystem.modules.ai.core;
+package org.example.monitorsystem.modules.ai.component;
 
 public enum IntentType {
     STATUS_QUERY, // 状态查询
