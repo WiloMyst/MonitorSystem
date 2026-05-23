@@ -36,7 +36,7 @@
 
 ---
 
-## 架构亮点与源码导读
+## 项目架构
 
 本项目针对工业物联网 (IoT) 数据洪峰、高并发监控大屏、以及传统 LLM 滞后性等真实企业痛点，系统在底层架构与代码规范上进行了深度防御性设计： 
 
@@ -54,7 +54,7 @@
 * **Redisson 分布式双重检查锁 (DCL)：** 在大屏数据重建链路上，利用 `RedissonClient` 加锁。应对多节点并发刷新，确保瞬间只有一个线程穿透到 MySQL。 
 * **看门狗机制与安全释放：** 摒弃写死的锁超时时间，利用 Redisson 底层看门狗 (Watchdog) 自动续期；在 `finally` 块中严格校验 `lock.isHeldByCurrentThread()`，杜绝误删锁灾难 (见 `DeviceInfoServiceImpl`)。 
 
-### 3.  [AI-Native 运维] RAG 与 Function Calling 的深度融合
+### 3.  [AI-Native 运维] RAG 与 Function Calling 的融合
 
 针对大模型“数据滞后”与“幻觉”的致命弱点，本项目设计了混合式 AI 架构： 
 
@@ -69,7 +69,7 @@
 * **跨线程上下文传递的 AOP 日志：** 自定义 `@Log` 注解结合 Spring AOP，并利用 `CompletableFuture` 实现日志全异步落库。**关键突破：** 在主线程提前捕获 Sa-Token 的 `ThreadLocal` 身份上下文，完美解决异步线程数据丢失问题，保障业务接口 100% 纯净与低延迟 (见 `LogAspect`)。 
 * **异常脱敏与全局防御：** 统一定义 `GlobalExceptionHandler`，拦截 JSR-303 参数校验与业务异常。对于未知的 500 系统崩溃，向前端统一掩蔽为“系统繁忙”，将完整堆栈截留至后端日志，杜绝服务器物理目录与 SQL 结构泄露风险。 
 
-### 5.  [云原生交付] 生产级容器化部署闭环
+### 5.  [云原生交付] 容器化部署闭环
 
 * 编写了具备多阶段构建的前后端 `Dockerfile`。 
 *  `docker-compose.yml` 配合 `init.sql` 实现 MySQL 数据库的冷启动自动初始化。一键拉起包括 Redis Stack、RabbitMQ、Nginx 反向代理在内的整套微服务矩阵。
