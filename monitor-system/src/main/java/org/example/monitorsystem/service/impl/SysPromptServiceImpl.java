@@ -51,12 +51,12 @@ public class SysPromptServiceImpl implements ISysPromptService {
     }
 
     /**
-     * 【核心热更新机制】：当后台管理员修改了数据库里的提示词后，调用此方法清空 Redis 缓存
+     * 【热更新机制】：当后台管理员修改了数据库里的提示词后，调用此方法清空 Redis 缓存
      */
     @Override
     public void refreshPromptCache(String promptCode) {
         String redisKey = PROMPT_CACHE_PREFIX + promptCode;
         stringRedisTemplate.delete(redisKey);
-        System.out.println("✅ 提示词 [" + promptCode + "] 的 Redis 缓存已清空，下次调用将热加载最新配置！");
+        System.out.println("提示词 [" + promptCode + "] 的 Redis 缓存已清空，下次调用将热加载最新配置！");
     }
 }

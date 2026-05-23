@@ -34,7 +34,7 @@ public class AiFunctionConfig {
     public Function<DeviceStatusRequest, DeviceStatusResponse> queryDeviceStatus(IDeviceInfoService deviceInfoService) {
 
         return request -> {
-            System.out.println("====== 🤖 触发 Function Calling！大模型要求查询设备: " + request.deviceCode() + " ======");
+            System.out.println("====== 触发 Function Calling！大模型要求查询设备: " + request.deviceCode() + " ======");
 
             // 1. 查询 MySQL 数据库
             LambdaQueryWrapper<DeviceInfo> wrapper = new LambdaQueryWrapper<>();
@@ -49,7 +49,7 @@ public class AiFunctionConfig {
             String statusStr = device.getStatus() == 1 ? "异常/高温报警" : "正常";
             String tempStr = device.getTemperature() != null ? device.getTemperature().toString() + "℃" : "暂无数据";
 
-            System.out.println("====== 🤖 查询完毕，将数据喂给大模型重新组织语言 ======");
+            System.out.println("====== 查询完毕，将数据喂给大模型重新组织语言 ======");
             return new DeviceStatusResponse(request.deviceCode(), statusStr, tempStr, "查询成功");
         };
     }
