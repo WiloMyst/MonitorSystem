@@ -1,19 +1,17 @@
 package org.example.monitorsystem.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.example.monitorsystem.common.component.IntentClassifier;
+import org.example.monitorsystem.common.component.IntentType;
 import org.example.monitorsystem.entity.DeviceInfo;
 import org.example.monitorsystem.service.IDeviceInfoService;
 import org.example.monitorsystem.service.IRagService;
 import org.example.monitorsystem.service.ISysPromptService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.reader.tika.TikaDocumentReader;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -28,104 +26,91 @@ public class RagServiceImpl implements IRagService {
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
 
-    @Value("classpath:/docs/maintenance_manual.pdf")
-    private Resource manualResource;
-
     @Autowired
     private ISysPromptService sysPromptService;
 
-    // 为了实现第一级高速路由，需要注入数据库查询服务
+    // 为了实现第一级高速路由，注入数据库查询服务
     @Autowired
     private IDeviceInfoService deviceInfoService;
+
+    // 注入意图分类引擎
+    @Autowired
+    private IntentClassifier intentClassifier;
 
     // 预编译正则表达式，匹配类似 "ATM-SN-001" 或 "5G-BS-SB-045" 的工业设备编号
     private static final Pattern DEVICE_CODE_PATTERN = Pattern.compile("([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)");
 
-    // 构造器注入
     public RagServiceImpl(ChatClient.Builder chatClientBuilder, VectorStore vectorStore) {
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
     }
 
-    /**
-     * 抽离出来的知识库同步方法。
-     * 在真实系统中，这个方法应该绑定给后台页面的一个“更新知识库”按钮，而不是每次启动服务器都跑一遍。
-     */
-    public void syncKnowledgeBaseToRedis() {
-        System.out.println("========== [RAG] 开始向 Redis 向量库同步物理知识文档 ==========");
-        try {
-            // 1. 读取并切片
-            TikaDocumentReader documentReader = new TikaDocumentReader(manualResource);
-            List<Document> rawDocuments = documentReader.get();
-            // 手动指定切片参数
-            // chunkSize = 800 (每个块最大长度), keepSeparator = true (保留分隔符)
-            TokenTextSplitter splitter = new TokenTextSplitter(800, 350, 5, 10000, true);
-            List<Document> chunkedDocuments = splitter.apply(rawDocuments);
+    @Override
+    public Flux<String> smartChat(String question) {
+        System.out.println("====== 接收到用户指令，进入网关分发系统 ======");
 
-            // 2. 写入 Redis (如果文档较多，这里底层会自动分批调用 Embedding 模型并存入 Redis)
-            vectorStore.add(chunkedDocuments);
+        // 1. 意图识别
+        IntentType intent = intentClassifier.classify(question);
 
-            System.out.println("========== [RAG] 同步成功！数据已永久持久化到 Redis 向量库 ==========");
-        } catch (Exception e) {
-            System.err.println("知识库同步失败：" + e.getMessage());
+        // 2. 分级路由
+        if (intent == IntentType.STATUS_QUERY) {
+            return handleStatusQuery(question);
+        } else if (intent == IntentType.FAULT_RAG) {
+            return handleFaultRag(question);
+        } else {
+            return handleAgentFallback(question);
         }
     }
 
-    @Override
-    public Flux<String> smartChat(String question) {
-        System.out.println("====== 接收到用户指令，进入多级路由网关 ======");
+    // =====================================================================
+    // 【第一级路由】：正则与规则引擎拦截 (最快、最稳、0 Token成本)
+    // 场景：针对明确查询设备状态的高频指令，直接穿透到 MySQL，完全不经过大模型
+    // =====================================================================
+    private Flux<String> handleStatusQuery(String question) {
+        Matcher matcher = DEVICE_CODE_PATTERN.matcher(question);
+        if (matcher.find()) {
+            String extractCode = matcher.group(1);
+            System.out.println(" [路由层] 命中第一级规则拦截，提取到设备编号：" + extractCode);
 
-        // =====================================================================
-        // 【第一级路由】：正则与规则引擎拦截 (最快、最稳、0 Token成本)
-        // 场景：针对明确查询设备状态的高频指令，直接穿透到 MySQL，完全不经过大模型
-        // =====================================================================
-        if (question.contains("状态") || question.contains("温度") || question.contains("情况")) {
-            Matcher matcher = DEVICE_CODE_PATTERN.matcher(question);
-            if (matcher.find()) {
-                String extractCode = matcher.group(1);
-                System.out.println(" [路由层] 命中第一级规则拦截，提取到设备编号：" + extractCode);
+            LambdaQueryWrapper<DeviceInfo> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(DeviceInfo::getDeviceCode, extractCode);
+            DeviceInfo device = deviceInfoService.getOne(wrapper);
 
-                LambdaQueryWrapper<DeviceInfo> wrapper = new LambdaQueryWrapper<>();
-                wrapper.eq(DeviceInfo::getDeviceCode, extractCode);
-                DeviceInfo device = deviceInfoService.getOne(wrapper);
-
-                if (device != null) {
-                    String statusText = device.getStatus() == 1 ? "异常/高温报警" : "运行正常";
-                    String response = String.format("查询成功：设备 [%s] 当前状态为 %s，实时温度为 %s℃。",
-                            device.getDeviceCode(), statusText, device.getTemperature());
-                    // 直接返回响应流，掐断后续大模型调用
-                    return Flux.just(response);
-                }
+            if (device != null) {
+                String statusText = device.getStatus() == 1 ? "异常/高温报警" : "运行正常";
+                String response = String.format("查询成功：设备 [%s] 当前状态为 %s，实时温度为 %s℃。",
+                        device.getDeviceCode(), statusText, device.getTemperature());
+                return Flux.just(response);
             }
         }
+        // 未匹配到实体，降级给 Agent
+        return handleAgentFallback(question);
+    }
 
-        // =====================================================================
-        // 【第二级路由】：垂直 RAG 专线路由
-        // 场景：明确的故障代码或排障求助，直接走向量检索 + 纯文本总结，不挂载任何 Function Calling 工具
-        // 优势：减少大模型判断是否需要调用工具的开销，避免乱调 API 产生幻觉
-        // =====================================================================
-        boolean isFaultQuery = question.contains("故障") || question.contains("报错") ||
-                question.contains("怎么修") || question.contains("ERR-") ||
-                question.contains("脱机");
+    // =====================================================================
+    // 【第二级路由】：垂直 RAG 专线路由
+    // 场景：明确的故障代码或排障求助，直接走向量检索 + 纯文本总结，不挂载任何 Function Calling 工具
+    // 优势：减少大模型判断是否需要调用工具的开销，避免乱调 API 产生幻觉
+    // =====================================================================
+    private Flux<String> handleFaultRag(String question) {
+        System.out.println(" [路由层] 命中第二级知识库专线，进入纯净 RAG 模式");
+        String context = searchVectorStore(question);
+        String dynamicTemplate = sysPromptService.getPromptContentByCode("device_rag");
 
-        if (isFaultQuery) {
-            System.out.println(" [路由层] 命中第二级知识库专线，进入纯净 RAG 模式");
-            String context = searchVectorStore(question);
-            String dynamicTemplate = sysPromptService.getPromptContentByCode("device_rag");
+        return this.chatClient.prompt()
+                .system(u -> u.text(dynamicTemplate)
+                        .param("context", context)
+                        .param("question", question))
+                // 这里没有 .functions("queryDeviceStatus")
+                .stream()
+                .content();
+    }
 
-            return this.chatClient.prompt()
-                    .system(u -> u.text(dynamicTemplate)
-                            .param("context", context)
-                            .param("question", question))
-                    // 这里没有 .functions("queryDeviceStatus")
-                    .stream()
-                    .content();
-        }
-
-        // =====================================================================
-        // 【第三级路由】：大模型 Agent 兜底路由 (最耗时，应对复杂与长尾提问)
-        // 场景：用户提问极其模糊，例如：“帮我分析一下最近系统有什么异常？”
-        // =====================================================================
+    // =====================================================================
+    // 【第三级路由】：大模型 Agent 兜底路由 (最耗时，应对复杂与长尾提问)
+    // 场景：用户提问极其模糊，例如：“帮我分析一下最近系统有什么异常？”
+    // =====================================================================
+    private Flux<String> handleAgentFallback(String question) {
         System.out.println(" [路由层] 未命中规则，进入第三级 Agent 兜底模式，交由大模型自行推理");
         String context = searchVectorStore(question);
         // 3. 从数据库获取纯净的模板 (里面包括 {context} {question})
