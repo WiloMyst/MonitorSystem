@@ -49,17 +49,27 @@ public class RagServiceImpl implements IRagService {
     public Flux<String> smartChat(String question) {
         System.out.println("====== 接收到用户指令，进入网关分发系统 ======");
 
-        // 1. 意图识别
-        IntentType intent = intentClassifier.classify(question);
+        // 拿到排序后的意图列表
+        List<IntentClassifier.IntentMatch> matchedIntents = intentClassifier.classify(question);
 
-        // 2. 分级路由
-        if (intent == IntentType.STATUS_QUERY) {
-            return handleStatusQuery(question);
-        } else if (intent == IntentType.FAULT_RAG) {
-            return handleFaultRag(question);
-        } else {
+        // 分级路由
+        // 1. 混合意图判定（如果识别出 2 个及以上的意图）
+        if (matchedIntents.size() > 1) {
             return handleAgentFallback(question);
         }
+
+        // 2. 单一意图判定
+        if (matchedIntents.size() == 1) {
+            IntentType mainIntent = matchedIntents.get(0).type();
+            if (mainIntent == IntentType.STATUS_QUERY) {
+                return handleStatusQuery(question);
+            } else if (mainIntent == IntentType.FAULT_RAG) {
+                return handleFaultRag(question);
+            }
+        }
+
+        // 3. 未命中任何意图（低于阈值），走长尾兜底
+        return handleAgentFallback(question);
     }
 
     // =====================================================================
