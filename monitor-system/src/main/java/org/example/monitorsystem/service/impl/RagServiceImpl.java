@@ -1,6 +1,7 @@
 package org.example.monitorsystem.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.example.monitorsystem.common.component.ContextBuilder;
 import org.example.monitorsystem.common.component.IntentClassifier;
 import org.example.monitorsystem.common.component.IntentType;
 import org.example.monitorsystem.entity.DeviceInfo;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -36,6 +38,9 @@ public class RagServiceImpl implements IRagService {
     // 注入意图分类引擎
     @Autowired
     private IntentClassifier intentClassifier;
+
+    @Autowired
+    private ContextBuilder contextBuilder;
 
     // 预编译正则表达式，匹配类似 "ATM-SN-001" 或 "5G-BS-SB-045" 的工业设备编号
     private static final Pattern DEVICE_CODE_PATTERN = Pattern.compile("([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)");
@@ -106,11 +111,9 @@ public class RagServiceImpl implements IRagService {
         System.out.println(" [路由层] 命中第二级知识库专线，进入纯净 RAG 模式");
         String context = searchVectorStore(question);
         String dynamicTemplate = sysPromptService.getPromptContentByCode("device_rag");
-
+        Map<String, Object> params = contextBuilder.build(question, context);
         return this.chatClient.prompt()
-                .system(u -> u.text(dynamicTemplate)
-                        .param("context", context)
-                        .param("question", question))
+                .system(u -> u.text(dynamicTemplate).params(params))
                 // 这里没有 .functions("queryDeviceStatus")
                 .stream()
                 .content();
@@ -125,11 +128,11 @@ public class RagServiceImpl implements IRagService {
         String context = searchVectorStore(question);
         // 3. 从数据库获取纯净的模板 (里面包括 {context} {question})
         String dynamicTemplate = sysPromptService.getPromptContentByCode("device_rag");
-        // 4. 发送 Prompt。暂时无奈抛弃 .user()，因为报文会丢失
+        // 4. 使用 ContextBuilder 机制组装参数
+        Map<String, Object> params = contextBuilder.build(question, context);
+        // 5. 发送 Prompt。暂时无奈抛弃 .user()，因为报文会丢失
         return this.chatClient.prompt()
-                .system(u -> u.text(dynamicTemplate)
-                        .param("context", context)
-                        .param("question", question))
+                .system(u -> u.text(dynamicTemplate).params(params))
                 // 挂载所有工具，让大模型自主决定
                 .functions("queryDeviceStatus")
                 .stream()
