@@ -24,7 +24,7 @@ public class RagServiceImpl implements IRagService {
     // 这里的 VectorStore 会被 Spring 自动注入为 RedisVectorStore，无需我们再 new
     private final VectorStore vectorStore;
 
-    @Value("classpath:/docs/maintenance_manual.txt")
+    @Value("classpath:/docs/maintenance_manual.pdf")
     private Resource manualResource;
 
     @Autowired
