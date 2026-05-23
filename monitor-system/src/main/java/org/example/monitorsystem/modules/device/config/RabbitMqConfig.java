@@ -2,7 +2,7 @@ package org.example.monitorsystem.modules.device.config;
 
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.DirectExchange;
+import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
@@ -13,11 +13,12 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMqConfig {
 
     // 1. 定义交换机名称 (路由器)
-    public static final String DEVICE_EXCHANGE = "device.direct.exchange";
+    public static final String DEVICE_EXCHANGE = "device.topic.exchange";
     // 2. 定义队列名称 (存放温度上报数据的容器)
     public static final String TEMPERATURE_QUEUE = "device.temperature.queue";
-    // 3. 定义路由键 (绑定的暗号)
-    public static final String ROUTING_KEY = "device.temp.report";
+    // 3. 定义通配符路由键 (Binding Key)
+    // 只要是 device.temp 开头的消息，全都扔进这个温度队列里
+    public static final String BINDING_KEY = "device.temp.#";
 
     // 注入 JSON 消息转换器，这样存入 MQ 的就是明文 JSON，再也没有安全拦截和乱码问题
     @Bean
@@ -33,13 +34,13 @@ public class RabbitMqConfig {
 
     // 声明交换机
     @Bean
-    public DirectExchange deviceExchange() {
-        return new DirectExchange(DEVICE_EXCHANGE);
+    public TopicExchange deviceExchange() {
+        return new TopicExchange(DEVICE_EXCHANGE);
     }
 
     // 将队列和交换机通过 RoutingKey 绑定起来
     @Bean
     public Binding bindingTemperatureQueue() {
-        return BindingBuilder.bind(temperatureQueue()).to(deviceExchange()).with(ROUTING_KEY);
+        return BindingBuilder.bind(temperatureQueue()).to(deviceExchange()).with(BINDING_KEY);
     }
 }

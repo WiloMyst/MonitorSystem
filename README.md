@@ -44,8 +44,8 @@
 
 传统直连写库方案在面对硬件网关并发洪峰时极易引发数据库连接池耗尽与服务雪崩。本项目重构了数据接入层：
 
-* **异步解耦与削峰：** 抛弃 Controller 直连 MySQL，采用 **RabbitMQ Direct 交换机** 作为缓冲池。硬件网关上报数据后毫秒级响应并断开，保护核心 Web 容器不被拖垮 (见 `IotMockController`)。
-* **可靠性投递与防御性消费：** 在消费者端摒弃 Auto-ACK，采用**手动 ACK 机制** (`channel.basicAck`)。结合极速 Redis 缓存写入与 MySQL 异步状态机流转，即便发生异常也能触发 `basicNack` 拒绝并重试，确保硬件预警数据**零丢失** (见 `DeviceMessageReceiver`)。 
+* **异步解耦与削峰：** 抛弃 Controller 直连 MySQL，采用 RabbitMQ Topic 交换机 作为缓冲池。硬件网关上报数据后毫秒级响应并断开，保护核心 Web 容器不被拖垮 (见 `IotMockController`)。
+* **可靠性投递与防御性消费：** 在消费者端摒弃 Auto-ACK，采用手动 ACK 机制 (`channel.basicAck`)。结合极速 Redis 缓存写入与 MySQL 异步状态机流转，即便发生异常也能触发 `basicNack` 拒绝并重试，确保硬件预警数据零丢失 (见 `DeviceMessageReceiver`)。 
 
 ### 2.  [缓存防击穿] 监控大屏的高并发读链路优化
 
