@@ -1,4 +1,4 @@
-package org.example.monitorsystem.modules.device.service;
+package org.example.monitorsystem.modules.device.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -10,6 +10,7 @@ import org.example.monitorsystem.modules.device.model.DeviceQueryDTO;
 import org.example.monitorsystem.modules.device.entity.DeviceInfo;
 import org.example.monitorsystem.modules.device.mapper.DeviceInfoMapper;
 import org.example.monitorsystem.modules.device.model.DeviceVO;
+import org.example.monitorsystem.modules.device.service.IDeviceInfoService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
