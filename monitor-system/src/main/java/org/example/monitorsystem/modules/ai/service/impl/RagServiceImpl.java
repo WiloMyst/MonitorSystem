@@ -109,9 +109,9 @@ public class RagServiceImpl implements IRagService {
     // =====================================================================
     private Flux<String> handleFaultRag(String question) {
         System.out.println(" [路由层] 命中第二级知识库专线，进入纯净 RAG 模式");
-        String context = searchVectorStore(question);
+        List<String> contextChunks = searchVectorStore(question);
         String dynamicTemplate = sysPromptService.getPromptContentByCode("device_rag");
-        Map<String, Object> params = contextBuilder.build(question, context);
+        Map<String, Object> params = contextBuilder.build(question, contextChunks);
         return this.chatClient.prompt()
                 .system(u -> u.text(dynamicTemplate).params(params))
                 // 这里没有 .functions("queryDeviceStatus")
@@ -125,11 +125,11 @@ public class RagServiceImpl implements IRagService {
     // =====================================================================
     private Flux<String> handleAgentFallback(String question) {
         System.out.println(" [路由层] 未命中规则，进入第三级 Agent 兜底模式，交由大模型自行推理");
-        String context = searchVectorStore(question);
+        List<String> contextChunks = searchVectorStore(question);
         // 3. 从数据库获取纯净的模板 (里面包括 {context} {question})
         String dynamicTemplate = sysPromptService.getPromptContentByCode("device_rag");
-        // 4. 使用 ContextBuilder 机制组装参数
-        Map<String, Object> params = contextBuilder.build(question, context);
+        // 4. 使用 ContextBuilder 机制组装参数，并防止长尾对话导致大模型 API 撑爆崩溃
+        Map<String, Object> params = contextBuilder.build(question, contextChunks);
         // 5. 发送 Prompt。暂时无奈抛弃 .user()，因为报文会丢失
         return this.chatClient.prompt()
                 .system(u -> u.text(dynamicTemplate).params(params))
@@ -141,15 +141,17 @@ public class RagServiceImpl implements IRagService {
 
     /**
      * 向量检索逻辑
+     * @return 返回严格按照相似度从高到低排序的 Chunk 字符串列表
      */
-    private String searchVectorStore(String question) {
+    private List<String> searchVectorStore(String question) {
         // 1. 向量检索 (TopK 限制)
         List<Document> similarDocuments = vectorStore.similaritySearch(
                 SearchRequest.query(question).withTopK(3)
         );
-        // 2. 提取上下文
+
+        // 2. 提取上下文：保持独立块结构返回
         return similarDocuments.stream()
                 .map(Document::getContent)
-                .collect(Collectors.joining("\n"));
+                .collect(Collectors.toList());
     }
 }
