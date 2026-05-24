@@ -6,6 +6,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 @Component
@@ -45,17 +49,32 @@ public class ToolUseAdapter {
             // 2. 异常拦截与安全隔离机制
             // ==========================================
             try {
-                // 执行真正的业务逻辑
-                Resp result = businessLogic.apply(request);
-                System.out.println(" [" + toolName + "] 业务逻辑执行成功");
+                // 将同步的业务逻辑提交到异步线程池，并强制设置 5 秒主动超时阈值
+                Resp result = CompletableFuture.supplyAsync(() -> businessLogic.apply(request))
+                        .get(5, TimeUnit.SECONDS);
 
+                System.out.println(" [" + toolName + "] 业务逻辑执行成功");
                 return new AgentObservation(true, result, null, "执行成功，请结合该数据组织最终回复给用户。");
 
-            } catch (Exception e) {
-                // 彻底阻断底层异常抛出到 AI 引擎，防止对话流崩溃
-                System.err.println(" [" + toolName + "] 底层业务发生崩溃: " + e.getMessage());
-                return new AgentObservation(false, null, "底层系统异常：" + e.getMessage(),
-                        "工具调用遭遇系统级异常，请向用户致歉并告知系统暂时繁忙。");
+            } catch (TimeoutException e) {
+                // 主动捕获超时异常，实现强行打断假死线程
+                System.err.println(" [" + toolName + "] 底层 API 响应超时(3s)，触发主动熔断！");
+                return new AgentObservation(false, null, "底层系统接口响应超时",
+                        "工具调用超时。请向用户致歉，说明当前硬件网络繁忙，引导用户稍后再试。");
+
+            } catch (ExecutionException e) {
+                // 异步执行中底层业务抛出的真实异常（如 SQL 报错、业务逻辑报错）
+                Throwable realCause = e.getCause() != null ? e.getCause() : e;
+                System.err.println(" [" + toolName + "] 底层业务发生崩溃: " + realCause.getMessage());
+                return new AgentObservation(false, null, "底层系统业务异常：" + realCause.getMessage(),
+                        "工具调用遭遇业务级异常，请转告用户暂时无法处理该设备数据。");
+
+            } catch (InterruptedException e) {
+                // 线程被强行中断的兜底处理
+                Thread.currentThread().interrupt();
+                System.err.println(" [" + toolName + "] 工具调用线程被意外中断");
+                return new AgentObservation(false, null, "系统线程中断",
+                        "系统内部调度异常，请提示用户刷新页面。");
             }
         };
     }

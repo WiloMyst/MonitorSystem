@@ -60,7 +60,7 @@
 
 * **企业数据不出域 (RAG)：** 利用 Spring AI 结合本地 `RedisVectorStore`，将企业内部《设备排障手册》向量化。断绝公网检索，解决私有化故障码排查痛点 (见 `RagServiceImpl`)。 
 * **打破大模型数据滞后壁垒 (Function Calling)：** 封装大模型工具调用能力，当用户询问“某个具体设备的实时状态”时，AI 会自动识别意图，回调 Java 本地 `queryDeviceStatus` 接口实时查库，将数据转化为自然语言响应 (见 `AiFunctionConfig`)。打破了传统大模型只能回答静态知识的壁垒，使 LLM 具备了感知物理世界实时状态的能力。
-* **提示词热更新引擎：** AI 的 Prompt 不写死在代码中，而是基于 Redis + MySQL 构建了支持动态刷新的缓存树，实现大模型人设与业务逻辑的**秒级热加载** (见 `SysPromptServiceImpl`)。 
+* **提示词热更新引擎：** AI 的 Prompt 不写死在代码中，而是基于 Redis + MySQL 构建了支持动态刷新的缓存树，实现大模型人设与业务逻辑的秒级热加载 (见 `SysPromptServiceImpl`)。 
 
 ### 4.  [合规与审计] 零侵入异步审计日志与安全底座
 
