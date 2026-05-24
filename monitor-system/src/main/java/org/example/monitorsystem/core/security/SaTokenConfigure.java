@@ -26,7 +26,8 @@ public class SaTokenConfigure implements WebMvcConfigurer {
         .addPathPatterns("/api/**")
         .excludePathPatterns(
                 "/api/auth/login",  // 放行人类登录接口
-                "/api/iot/**"       // 放行所有硬件设备上报数据的接口
+                "/api/iot/**",      // 放行所有硬件设备上报数据的接口
+                "/api/prompt/internal/**"  // 放行内部微服务prompt调用接口
         );
     }
 }
