@@ -1,22 +1,33 @@
+<!--
+  AI 智能排障对话页
+  功能:
+    - SSE 流式对话，逐 chunk 渲染 AI 回复
+    - Markdown 实时渲染（marked）
+    - Human-in-the-Loop (HITL) 审批面板：用户可确认或拒绝 AI 的操作请求
+    - 降级模式通知展示
+-->
 <script setup lang="ts">
 import { askAiStream } from '../api/ai'
+import type { HitlPendingData } from '../api/ai'
 import { ref, nextTick } from 'vue'
-import { ChatLineRound, UserFilled, Opportunity } from '@element-plus/icons-vue'
-import { marked } from 'marked' // 引入 Markdown 解析神器
+import { UserFilled, Opportunity } from '@element-plus/icons-vue'
+import { marked } from 'marked'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  hitlPending?: HitlPendingData
+  hitlResolved?: boolean
 }
 
 const inputMsg = ref('')
 const loading = ref(false)
+const currentConversationId = ref('')
 const messages = ref<Message[]>([
   { role: 'assistant', content: '您好！我是 AI 智能排障专家。请描述您遇到的设备故障现象或输入故障码，我将为您检索内部知识库并提供方案。' }
 ])
 const scrollRef = ref<any>(null)
 
-// 自动滚动到底部
 const scrollToBottom = async () => {
   await nextTick()
   if (scrollRef.value) {
@@ -24,51 +35,97 @@ const scrollToBottom = async () => {
   }
 }
 
-// 核心工具：将文本解析为 Markdown HTML
 const parseMarkdown = (text: string) => {
   if (!text) return ''
-  // marked.parse 返回的是 HTML 字符串
-  return marked.parse(text) as string 
+  return marked.parse(text) as string
 }
 
-// 发送消息
+const handleHitlApprove = (msgIndex: number, optionId?: string) => {
+  const msg = messages.value[msgIndex]
+  if (msg) {
+    msg.hitlResolved = true
+    const label = msg.hitlPending?.options?.find(o => o.id === optionId)?.label || '确认执行'
+    inputMsg.value = `[HITL-APPROVE] ${label}`
+    handleSend()
+  }
+}
+
+const handleHitlReject = (msgIndex: number) => {
+  const msg = messages.value[msgIndex]
+  if (msg) {
+    msg.hitlResolved = true
+    inputMsg.value = '[HITL-REJECT] 拒绝执行该操作'
+    handleSend()
+  }
+}
+
 const handleSend = async () => {
   if (!inputMsg.value.trim()) return
-  
+
   const userMsg = inputMsg.value
-  // 1. 用户消息入列
   messages.value.push({ role: 'user', content: userMsg })
   inputMsg.value = ''
-  
-  // 2. 开启 loading 动画（此时界面只会显示“正在检索...”的气泡）
+
   loading.value = true
   scrollToBottom()
 
-  // 记录 AI 回复在数组中的索引位置，初始为 -1
   let assistantMsgIndex = -1
 
   try {
-    // 3. 调用流式接口
-    await askAiStream(userMsg, (chunkText) => {
-      // 【完美解决双气泡问题】：只有收到第一块数据时，才关掉 loading 并推入真实的气泡
-      if (loading.value) {
-        loading.value = false // 关掉“正在检索”的气泡
-        assistantMsgIndex = messages.value.length
-        messages.value.push({ role: 'assistant', content: chunkText })
-      } else {
-        // 后续的数据，直接拼接到现有的气泡中
-        const assistantMsg = messages.value[assistantMsgIndex]
-        if (assistantMsg) {
-          assistantMsg.content += chunkText
-        } else {
+    await askAiStream(userMsg, {
+      onConversationId: (id) => {
+        currentConversationId.value = id
+      },
+      onMessage: (chunkText) => {
+        if (loading.value) {
+          loading.value = false
           assistantMsgIndex = messages.value.length
           messages.value.push({ role: 'assistant', content: chunkText })
+        } else {
+          const assistantMsg = messages.value[assistantMsgIndex]
+          if (assistantMsg) {
+            assistantMsg.content += chunkText
+          } else {
+            assistantMsgIndex = messages.value.length
+            messages.value.push({ role: 'assistant', content: chunkText })
+          }
         }
+        scrollToBottom()
+      },
+      onHitlPending: (data: HitlPendingData) => {
+        if (loading.value) {
+          loading.value = false
+        }
+        assistantMsgIndex = messages.value.length
+        messages.value.push({
+          role: 'assistant',
+          content: data.question || 'AI 请求执行一项操作，需要您的确认：',
+          hitlPending: data,
+          hitlResolved: false
+        })
+        scrollToBottom()
+      },
+      onError: (msg) => {
+        if (loading.value) {
+          loading.value = false
+          messages.value.push({ role: 'assistant', content: `❌ ${msg}` })
+        } else {
+          const assistantMsg = messages.value[assistantMsgIndex]
+          if (assistantMsg) {
+            assistantMsg.content += `\n\n*[${msg}]*`
+          }
+        }
+        scrollToBottom()
+      },
+      onFallbackNotice: (msg) => {
+        const assistantMsg = messages.value[assistantMsgIndex]
+        if (assistantMsg) {
+          assistantMsg.content += `\n\n⚠️ *${msg}*`
+        }
+        scrollToBottom()
       }
-      scrollToBottom()
-    })
+    }, currentConversationId.value || undefined)
   } catch (error) {
-    // 异常兜底：如果报错了还没建出气泡，就建一个报错气泡
     if (loading.value) {
       loading.value = false
       messages.value.push({ role: 'assistant', content: '❌ 抱歉，服务器开小差了或网络连接中断。' })
@@ -88,17 +145,44 @@ const handleSend = async () => {
 <template>
   <div class="chat-container">
     <el-scrollbar ref="scrollRef" class="chat-list">
-      
+
       <div v-for="(msg, index) in messages" :key="index" :class="['msg-wrapper', msg.role]">
-        <el-avatar :icon="msg.role === 'user' ? UserFilled : Opportunity" 
-                   :size="40" 
+        <el-avatar :icon="msg.role === 'user' ? UserFilled : Opportunity"
+                   :size="40"
                    :style="{ backgroundColor: msg.role === 'user' ? '#409EFF' : '#67C23A' }" />
         <div class="msg-content">
           <div class="role-name">{{ msg.role === 'user' ? '运维员' : 'AI 专家' }}</div>
-          
+
           <div v-if="msg.role === 'user'" class="bubble">{{ msg.content }}</div>
-          
+
           <div v-else class="bubble markdown-body" v-html="parseMarkdown(msg.content)"></div>
+
+          <div v-if="msg.role === 'assistant' && msg.hitlPending && !msg.hitlResolved" class="hitl-panel">
+            <div class="hitl-header">
+              <el-icon color="#E6A23C" :size="16"><Opportunity /></el-icon>
+              <span>人工确认 (HITL)</span>
+            </div>
+            <div v-if="msg.hitlPending.options && msg.hitlPending.options.length > 0" class="hitl-options">
+              <el-button
+                v-for="opt in msg.hitlPending.options"
+                :key="opt.id"
+                size="small"
+                type="primary"
+                plain
+                @click="handleHitlApprove(index, opt.id)"
+              >
+                {{ opt.label }}
+              </el-button>
+            </div>
+            <div v-else class="hitl-options">
+              <el-button size="small" type="primary" @click="handleHitlApprove(index)">确认执行</el-button>
+            </div>
+            <el-button size="small" type="danger" plain @click="handleHitlReject(index)">拒绝</el-button>
+          </div>
+
+          <div v-if="msg.role === 'assistant' && msg.hitlPending && msg.hitlResolved" class="hitl-resolved">
+            <el-tag size="small" type="info">已处理</el-tag>
+          </div>
         </div>
       </div>
 
@@ -115,8 +199,8 @@ const handleSend = async () => {
     </el-scrollbar>
 
     <div class="input-area">
-      <el-input v-model="inputMsg" 
-                placeholder="请输入故障码（如 T-994）或故障现象..." 
+      <el-input v-model="inputMsg"
+                placeholder="请输入故障码（如 T-994）或故障现象..."
                 @keyup.enter="handleSend"
                 :disabled="loading">
         <template #append>
@@ -128,7 +212,6 @@ const handleSend = async () => {
 </template>
 
 <style scoped>
-/* 原有基础样式保持不变 */
 .chat-container {
   height: calc(100vh - 220px);
   display: flex;
@@ -149,7 +232,7 @@ const handleSend = async () => {
 }
 .msg-content {
   margin: 0 15px;
-  max-width: 75%; /* 稍微加宽一点，让排版更好看 */
+  max-width: 75%;
 }
 .role-name {
   font-size: 12px;
@@ -166,29 +249,25 @@ const handleSend = async () => {
   line-height: 1.6;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
   font-size: 14px;
-  /* 去掉这里的 pre-wrap，因为 Markdown 解析后已经是 HTML 了 */
 }
 .user .bubble {
   background-color: #ecf5ff;
   color: #409EFF;
-  white-space: pre-wrap; /* 用户的文本还是保留换行符 */
+  white-space: pre-wrap;
 }
 .assistant .bubble {
   background-color: #f0f9eb;
-  color: #303133; /* 改为深灰色，让大段文字阅读更护眼 */
+  color: #303133;
 }
 
-/* =================================================== */
-/* 【新增】：为 Markdown 渲染后的标签专门定制的企业级 CSS */
-/* =================================================== */
 :deep(.markdown-body p) {
-  margin: 0 0 10px 0; /* 段落间距 */
+  margin: 0 0 10px 0;
 }
 :deep(.markdown-body p:last-child) {
   margin-bottom: 0;
 }
 :deep(.markdown-body strong) {
-  color: #409EFF; /* 把加粗的字体变成主题蓝，极其提神 */
+  color: #409EFF;
   font-weight: 600;
 }
 :deep(.markdown-body ol), :deep(.markdown-body ul) {
@@ -199,7 +278,32 @@ const handleSend = async () => {
   margin-bottom: 5px;
 }
 
-/* Loading 呼吸灯特效 */
+.hitl-panel {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px solid #E6A23C;
+  border-radius: 6px;
+  background-color: #FDF6EC;
+}
+.hitl-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #E6A23C;
+  margin-bottom: 8px;
+}
+.hitl-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.hitl-resolved {
+  margin-top: 6px;
+}
+
 .loading-dots {
   color: #909399;
   font-style: italic;

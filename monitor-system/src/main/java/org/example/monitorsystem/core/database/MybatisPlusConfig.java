@@ -6,12 +6,15 @@ import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerIntercept
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * MyBatis-Plus 配置类
+ * 注册分页拦截器，使 Mapper 方法支持自动生成分页 SQL (LIMIT/OFFSET)。
+ */
 @Configuration
 public class MybatisPlusConfig {
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        // 添加分页拦截器（只要配了这行，你的 Mapper 就能自动写 LIMIT 和 OFFSET 语句了！）
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
         return interceptor;
     }

@@ -1,5 +1,9 @@
 package org.example.monitorsystem.core.exception;
 
+/**
+ * 全局错误码枚举
+ * 统一管理系统中所有业务错误码和提示信息，避免硬编码。
+ */
 public enum ErrorCodeEnum {
     SUCCESS(200, "操作成功"),
     PARAM_ERROR(400, "参数校验失败"),
@@ -7,7 +11,7 @@ public enum ErrorCodeEnum {
     FORBIDDEN(403, "没有相关权限"),
     USER_NOT_FOUND(4001, "账号不存在或已被冻结"),
     PASSWORD_ERROR(4002, "账号或密码错误"),
-    SYSTEM_ERROR(500, "系统内部繁忙，请稍后再试"); // 绝不向前端暴露真实的 500 堆栈
+    SYSTEM_ERROR(500, "系统内部繁忙，请稍后再试");
 
     private final int code;
     private final String message;

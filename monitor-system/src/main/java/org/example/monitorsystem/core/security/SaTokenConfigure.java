@@ -7,27 +7,39 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+/**
+ * Sa-Token 安全配置
+ * 注册两类拦截器:
+ *   1. Sa-Token 登录拦截器: 拦截 /api/** 路径，排除登录、IoT、内部接口
+ *   2. InternalApiInterceptor: 拦截 /api/internal/** 路径，校验内部服务密钥或 IP 白名单
+ */
 @Configuration
 public class SaTokenConfigure implements WebMvcConfigurer {
 
-    // 注册 Sa-Token 拦截器
+    private final InternalApiInterceptor internalApiInterceptor;
+
+    public SaTokenConfigure(InternalApiInterceptor internalApiInterceptor) {
+        this.internalApiInterceptor = internalApiInterceptor;
+    }
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 注册路由拦截器，校验规则为：校验是否登录
         registry.addInterceptor(new SaInterceptor(handle -> {
-            // 如果是跨域的 OPTIONS 预检请求，直接全部放行！
             if (SaHolder.getRequest().getMethod().equals("OPTIONS")) {
                 return;
             }
-
-            // 正常的请求再去校验登录状态
             StpUtil.checkLogin();
         }))
         .addPathPatterns("/api/**")
         .excludePathPatterns(
-                "/api/auth/login",  // 放行人类登录接口
-                "/api/iot/**",      // 放行所有硬件设备上报数据的接口
-                "/api/prompt/internal/**"  // 放行内部微服务prompt调用接口
+                "/api/auth/login",
+                "/api/iot/**",
+                "/api/prompt/internal/**",
+                "/api/internal/**"
         );
+
+        registry.addInterceptor(internalApiInterceptor)
+                .addPathPatterns("/api/internal/**")
+                .order(0);
     }
 }

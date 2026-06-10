@@ -21,19 +21,10 @@ spring:
     username: ${MQ_USER:admin}
     password: ${MQ_PASSWORD:123456}
 
-  # AI 配置：Key 通过环境变量传入，不在代码里明文显示
-  ai:
-    zhipuai:
-      api-key: ${ZHIPU_API_KEY}
-      chat:
-        options:
-          model: glm-4-flash
-    vectorstore:
-      redis:
-        # 这里的 URI 也要动态拼装
-        uri: redis://:${REDIS_PASSWORD:123456}@${REDIS_HOST:redis-stack}:6379/
-        index: monitor_manual_index
-        prefix: "rag:doc:"
+# AI 微服务地址 (Docker 内网)
+ai-service:
+  url: ${AI_SERVICE_URL:http://ai-service:8000}
+  internal-secret: ${AI_SERVICE_INTERNAL_SECRET}
 
 # 生产环境关闭 SQL 打印，保护性能
 mybatis-plus:

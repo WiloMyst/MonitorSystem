@@ -6,10 +6,6 @@ spring:
   application:
     name: monitor-system
 
-  # 只有在 Spring Boot 3 中，为了支持 Spring AI 的 API 调用，需要配置此项
-  main:
-    allow-bean-definition-overriding: true
-
 # Sa-Token 配置 (通用部分)
 sa-token:
   token-name: satoken

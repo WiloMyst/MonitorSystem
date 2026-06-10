@@ -8,6 +8,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
+/**
+ * IoT 模拟数据上报控制器
+ * 模拟硬件网关向 RabbitMQ 上报设备温度、振动等指标数据，
+ * 用于开发和测试阶段验证数据链路。
+ */
 @CrossOrigin
 @RestController
 @RequestMapping("/api/iot")

@@ -15,6 +15,13 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.util.Map;
 
+/**
+ * 设备消息消费者
+ * 监听 RabbitMQ 设备数据队列，接收 IoT 网关上报的指标数据:
+ *   1. 更新 MySQL 中的设备状态和温度
+ *   2. 同步写入 Redis 缓存供 AI 微服务快速查询
+ *   3. 温度超阈值时自动生成告警记录
+ */
 @Component
 public class DeviceMessageReceiver {
 

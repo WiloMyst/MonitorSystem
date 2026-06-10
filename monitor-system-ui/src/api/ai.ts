@@ -1,46 +1,114 @@
-// 我们不需要经过 utils/request.ts 的 axios 拦截器了，直接用原生 fetch
-export const askAiStream = async (question: string, onMessage: (chunk: string) => void) => {
-  const token = localStorage.getItem('sa-token') || '';
-  
-  // 1. 发起原生 Fetch 请求
+/**
+ * AI 聊天 SSE 流式接口
+ *
+ * 通过 fetch + ReadableStream 消费后端 SSE 流，支持以下事件类型:
+ *   - message:         正常回复内容（逐 chunk 推送）
+ *   - conversation_id:  会话 ID（首次对话时返回）
+ *   - error:           错误消息
+ *   - hitl_pending:    Human-in-the-Loop 审批等待
+ *   - fallback_notice: 降级模式通知
+ */
+export interface StreamCallbacks {
+  onMessage: (chunk: string) => void
+  onConversationId?: (id: string) => void
+  onError?: (msg: string) => void
+  onHitlPending?: (data: HitlPendingData) => void
+  onFallbackNotice?: (msg: string) => void
+}
+
+/** HITL 审批等待数据 */
+export interface HitlPendingData {
+  request_id: string
+  question: string
+  options?: Array<{ id: string; label: string }>
+  timeout_seconds?: number
+}
+
+/** 从 SSE data 字段中安全提取 content，兼容纯字符串和 JSON 对象两种格式 */
+function safeExtractContent(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw)
+    if (typeof parsed === 'string') return parsed
+    if (parsed && typeof parsed === 'object' && 'content' in parsed) {
+      return String(parsed.content)
+    }
+    return raw
+  } catch {
+    return raw
+  }
+}
+
+export const askAiStream = async (
+  question: string,
+  callbacks: StreamCallbacks,
+  conversationId?: string
+) => {
+  const token = localStorage.getItem('sa-token') || ''
+
+  const body: Record<string, string> = { question }
+  if (conversationId) {
+    body.conversation_id = conversationId
+  }
+
   const response = await fetch(import.meta.env.VITE_APP_BASE_API + '/ai/ask', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'satoken': token // 别忘了带上护照，否则会被 Sa-Token 拦截
+      'satoken': token
     },
-    body: JSON.stringify({ question })
-  });
+    body: JSON.stringify(body)
+  })
 
   if (!response.ok) {
-    throw new Error('网络请求失败');
+    const errorText = await response.text().catch(() => '')
+    throw new Error(errorText || `请求失败 (${response.status})`)
   }
 
-  // 2. 获取响应体的读取器 (Reader)
-  const reader = response.body?.getReader();
-  if (!reader) return;
+  const reader = response.body?.getReader()
+  if (!reader) return
 
-  const decoder = new TextDecoder('utf-8'); // 用于将字节流解码为字符串
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
 
-  // 3. 循环读取流数据
   while (true) {
-    // done: 是否读完；value: 本次读到的字节数组 (Uint8Array)
-    const { done, value } = await reader.read();
-    
-    if (done) {
-      break; // 服务器说：“我说完了，挂断！”
-    }
+    const { done, value } = await reader.read()
+    if (done) break
 
-    // 将字节解码成字符串
-    const chunk = decoder.decode(value, { stream: true });
-    
-    // 【坑点处理】：Spring 的 text/event-stream 默认格式是 "data: 实际内容\n\n"
-    // 我们需要用正则把 "data:" 和后面的空行剔除，只保留纯文本内容
-    const cleanText = chunk.replace(/^data:/gm, '').replace(/\n\n/g, '');
-    
-    if (cleanText) {
-      // 触发回调函数，把字传给组件页面
-      onMessage(cleanText); 
+    buffer += decoder.decode(value, { stream: true })
+
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    let currentEvent = 'message'
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim()
+      } else if (line.startsWith('data:')) {
+        const data = line.slice(5).trim()
+        if (!data) continue
+
+        if (currentEvent === 'conversation_id') {
+          const convId = safeExtractContent(data)
+          callbacks.onConversationId?.(convId)
+        } else if (currentEvent === 'error') {
+          const errMsg = safeExtractContent(data)
+          callbacks.onError?.(errMsg)
+        } else if (currentEvent === 'hitl_pending') {
+          try {
+            const parsed: HitlPendingData = JSON.parse(data)
+            callbacks.onHitlPending?.(parsed)
+          } catch {
+            callbacks.onHitlPending?.({ request_id: '', question: data })
+          }
+        } else if (currentEvent === 'fallback_notice') {
+          const noticeMsg = safeExtractContent(data)
+          callbacks.onFallbackNotice?.(noticeMsg)
+        } else {
+          const content = safeExtractContent(data)
+          callbacks.onMessage(content)
+        }
+        currentEvent = 'message'
+      }
     }
   }
 }

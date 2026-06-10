@@ -3,15 +3,18 @@ package org.example.monitorsystem.core.web;
 import lombok.Data;
 
 /**
- * 全局统一返回格式
+ * 全局统一响应包装
+ * 所有 API 返回值均使用此格式，确保前端可统一处理:
+ *   - code: 状态码 (200=成功, 4xx=客户端错误, 5xx=服务端错误)
+ *   - message: 提示信息
+ *   - data: 业务数据负载
  */
 @Data
 public class Result<T> {
-    private Integer code; // 状态码：200代表成功，500代表失败
-    private String message; // 给前端的提示信息
-    private T data; // 真正的数据负载
+    private Integer code;
+    private String message;
+    private T data;
 
-    // 成功时的快捷方法
     public static <T> Result<T> success(T data) {
         Result<T> result = new Result<>();
         result.setCode(200);
@@ -20,7 +23,6 @@ public class Result<T> {
         return result;
     }
 
-    // 失败时的快捷方法
     public static <T> Result<T> error(Integer code, String message) {
         Result<T> result = new Result<>();
         result.setCode(code);

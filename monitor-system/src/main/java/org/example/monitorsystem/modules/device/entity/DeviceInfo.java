@@ -8,8 +8,12 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@Data // 自动生成 Getter/Setter
-@TableName("device_info") // 对齐数据库表名
+/**
+ * 设备信息实体
+ * 对应数据库表 device_info，存储设备基础信息和实时状态。
+ */
+@Data
+@TableName("device_info")
 public class DeviceInfo {
     @TableId
     private Long id;
@@ -18,7 +22,6 @@ public class DeviceInfo {
     private Integer status;
     private BigDecimal temperature;
 
-    // 标记为插入和更新时自动填充
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updateTime;
 }

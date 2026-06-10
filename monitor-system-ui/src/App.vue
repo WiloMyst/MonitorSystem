@@ -1,8 +1,17 @@
+<!--
+  应用根组件
+  布局结构:
+    - 登录页: 全屏 router-view
+    - 其他页面: Header + Aside(侧边菜单) + Main(内容区)
+  功能:
+    - 退出登录
+    - 重置 AI 缓存（高危操作，二次确认）
+-->
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from './stores/user'
-import { Monitor, Document, Setting, ChatDotRound, SwitchButton, Refresh } from '@element-plus/icons-vue' // 新增了 Refresh 图标
+import { Monitor, Document, Setting, ChatDotRound, SwitchButton, Refresh } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { refreshPromptCache } from './api/prompt'
 
@@ -10,9 +19,8 @@ const isCollapse = ref(false)
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
-const isRefreshing = ref(false) // 刷新按钮的 loading 状态
+const isRefreshing = ref(false)
 
-// 退出登录逻辑
 const handleLogout = () => {
   ElMessageBox.confirm('确定要退出登录吗?', '提示', { type: 'warning' }).then(() => {
     userStore.logout()
@@ -20,7 +28,6 @@ const handleLogout = () => {
   }).catch(() => {})
 }
 
-// 全局重置 AI 缓存逻辑
 const handleRefreshCache = () => {
   ElMessageBox.confirm(
     '此操作将清空 AI 专家的本地记忆，强制重载数据库里的最新提示词，是否继续？',
@@ -98,7 +105,6 @@ const handleRefreshCache = () => {
 </template>
 
 <style scoped>
-/* 这里写了一点点必须的 CSS 来让布局铺满全屏 */
 .layout-container {
   height: 100vh;
 }
@@ -122,7 +128,7 @@ const handleRefreshCache = () => {
   transition: width 0.3s;
 }
 .el-menu-vertical {
-  border-right: none; /* 去除菜单默认的边框，显得更高级 */
+  border-right: none;
 }
 .user-info { display: flex; align-items: center; }
 </style>

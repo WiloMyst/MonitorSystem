@@ -5,7 +5,10 @@ import org.example.monitorsystem.modules.device.model.DeviceQueryDTO;
 import org.example.monitorsystem.modules.device.entity.DeviceInfo;
 import org.example.monitorsystem.modules.device.model.DeviceVO;
 
+/**
+ * 设备信息服务接口
+ * 继承 MyBatis-Plus IService，提供设备分页查询能力。
+ */
 public interface IDeviceInfoService extends IService<DeviceInfo> {
-    // 增加分页查询方法
     Page<DeviceVO> getDevicePage(DeviceQueryDTO queryDTO);
 }

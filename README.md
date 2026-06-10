@@ -6,92 +6,193 @@
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.4-brightgreen.svg)
 ![Vue](https://img.shields.io/badge/Vue-3.x-4fc08d.svg)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ed.svg)
-![AI](https://img.shields.io/badge/Spring%20AI-RAG-orange.svg)
 
 ## 项目简介
-本项目是一个面向大型企业数据中心、工业物联网（IoT）设备及通信基站的**高并发监控与智能排障平台**。
-系统集成了实时数据大屏采集、异步削峰处理、分布式缓存控制，并融合了大模型能力（RAG 检索增强生成与 Function Calling），为运维人员提供“全天候监控 + 智能故障诊断”的一站式闭环解决方案。
+
+本项目是一个面向数据中心和工业物联网场景的**设备监控与智能排障平台**。Java 后端作为核心业务层，负责设备数据采集、高并发削峰、缓存防击穿、权限认证和审计日志等基础能力，同时通过 SSE 流式转发对接独立的 AI 微服务，为运维人员提供智能故障诊断和排障建议。
 
 ---
 
 ## 核心技术栈
 
-### 后端 (Backend)
 * **核心框架：** Java 17 + Spring Boot 3.3.4
 * **持久层：** MyBatis-Plus 3.5.5 + MySQL 8.0
-* **权限认证：** Sa-Token (轻量级 RBAC 鉴权)
-* **缓存与分布式锁：** Redis + Redisson 3.27.0
-* **消息队列：** RabbitMQ
-* **AI 核心引擎：** Spring AI + RedisVectorStore + 智谱 GLM-4 大模型
-
-### 前端 (Frontend)
-* **核心框架：** Vue 3 + Vite
-* **UI 组件库：** Element Plus
-* **数据可视化：** ECharts
-* **状态管理与路由：** Pinia + Vue Router
-
-### 运维与部署 (DevOps)
-* **容器化：** Docker + Docker Compose 一键编排部署
-* **反向代理：** Nginx
+* **权限认证：** Sa-Token 1.38 (轻量级 RBAC 鉴权)
+* **缓存：** Redis + Redisson 3.27.0 (分布式锁) + Caffeine 3.1.8 (本地二级缓存)
+* **消息队列：** RabbitMQ (Topic 交换机 + 手动 ACK)
+* **AI 服务对接：** WebFlux SSE 流式代理 + 限流 + 熔断 + 降级
+* **前端：** Vue 3 + Vite + Element Plus + ECharts
+* **容器化：** Docker + Docker Compose (6 服务一键编排)
 
 ---
 
-## 项目架构
+## 系统架构
 
-本项目针对工业物联网 (IoT) 数据洪峰、高并发监控大屏、以及传统 LLM 滞后性等企业痛点，系统在底层架构与代码规范上进行了防御性设计： 
+```
+┌─────────────┐     ┌──────────────────────────────────────────────────┐
+│   Nginx     │────▶│              Java 后端 (Spring Boot)              │
+│  (前端/代理) │     │  设备监控 │ 权限认证 │ 审计日志 │ AI 代理网关    │
+└─────────────┘     └──────────┬───────────────────────┬──────────────┘
+                               │ SSE 流式转发          │ 内部 API 回调
+                               ▼                       │
+                    ┌──────────────────────┐            │
+                    │  AI 微服务 (独立部署) │◀───────────┘
+                    │  意图分类 / RAG /     │
+                    │  多 Agent 协作        │
+                    └──────────────────────┘
+```
 
-### 1.  [流量削峰与高可用] 海量 IoT 设备数据上报架构
+---
 
-传统直连写库方案在面对硬件网关并发洪峰时极易引发数据库连接池耗尽与服务雪崩。本项目重构了数据接入层：
+## 技术亮点
 
-* **异步解耦与削峰：** 抛弃 Controller 直连 MySQL，采用 RabbitMQ Topic 交换机 作为缓冲池。硬件网关上报数据后毫秒级响应并断开，保护核心 Web 容器不被拖垮 (见 `IotMockController`)。
-* **可靠性投递与防御性消费：** 在消费者端摒弃 Auto-ACK，采用手动 ACK 机制 (`channel.basicAck`)。结合极速 Redis 缓存写入与 MySQL 异步状态机流转，即便发生异常也能触发 `basicNack` 拒绝并重试，确保硬件预警数据零丢失 (见 `DeviceMessageReceiver`)。 
+### 1. RabbitMQ 异步削峰：IoT 设备数据上报
 
-### 2.  [缓存防击穿] 监控大屏的高并发读链路优化
+硬件网关并发上报数据时，如果直接写库很容易把数据库连接池打满。本项目用 RabbitMQ 做了缓冲：
 
-针对监控大屏初始化时可能存在的“缓存击穿”与“雪崩”风险，构建了缓存安全防线：
+* **异步解耦：** 网关上报数据后直接扔进 RabbitMQ Topic 交换机，毫秒级返回，不占用 Web 容器线程（见 `IotMockController`）
+* **手动 ACK + 重试：** 消费端不用 Auto-ACK，而是处理完再 `channel.basicAck`。异常时 `basicNack` 拒绝并重入队列，确保预警数据零丢失（见 `DeviceMessageReceiver`）
+* **Redis + MySQL 双写：** 消费者先极速写 Redis 缓存（供 AI 微服务查询），再异步落库 MySQL，同时根据温度阈值自动生成告警
 
-* **Redisson 分布式双重检查锁 (DCL)：** 在大屏数据重建链路上，利用 `RedissonClient` 加锁。应对多节点并发刷新，确保瞬间只有一个线程穿透到 MySQL。 
-* **看门狗机制与安全释放：** 摒弃写死的锁超时时间，利用 Redisson 底层看门狗 (Watchdog) 自动续期；在 `finally` 块中严格校验 `lock.isHeldByCurrentThread()`，杜绝误删锁灾难 (见 `DeviceInfoServiceImpl`)。 
+### 2. Redisson 分布式锁防缓存击穿
 
-### 3.  [AI-Native 运维] RAG 与 Function Calling 的融合
+监控大屏首页是高并发读场景，缓存失效瞬间可能有大量请求同时穿透到数据库：
 
-针对大模型“数据滞后”与“幻觉”的致命弱点，本项目融合了 RAG 与 Function Calling： 
+* **DCL 双重检查：** 先查 Redis，未命中时通过 Redisson 加锁，拿到锁后再查一次 Redis（可能已被其他节点重建），避免重复建缓存（见 `DeviceInfoServiceImpl`）
+* **看门狗续期：** 不写死锁超时时间，利用 Redisson 底层 Watchdog 自动续期，防止业务未执行完锁就过期
+* **安全释放：** `finally` 块中严格校验 `lock.isHeldByCurrentThread()`，只释放自己加的锁，避免误删其他线程的锁
 
-* **企业数据不出域 (RAG)：** 利用 Spring AI 结合本地 `RedisVectorStore`，将企业内部《设备排障手册》向量化。断绝公网检索，解决私有化故障码排查痛点 (见 `RagServiceImpl`)。 
-* **打破大模型数据滞后壁垒 (Function Calling)：** 封装大模型工具调用能力，当用户询问“某个具体设备的实时状态”时，AI 会自动识别意图，回调 Java 本地 `queryDeviceStatus` 接口实时查库，将数据转化为自然语言响应 (见 `AiFunctionConfig`)。打破了传统大模型只能回答静态知识的壁垒，使 LLM 具备了感知物理世界实时状态的能力。
-* **提示词热更新引擎：** AI 的 Prompt 不写死在代码中，而是基于 Redis + MySQL 构建了支持动态刷新的缓存树，实现大模型人设与业务逻辑的秒级热加载 (见 `SysPromptServiceImpl`)。 
+### 3. AI 服务代理网关：限流 + 熔断 + 降级
 
-### 4.  [合规与审计] 零侵入异步审计日志与安全底座
+Java 后端作为前端和 AI 微服务之间的 BFF 层，不是简单地透传请求，而是加了三层防护：
 
-遵循企业审计与合规要求，设计了系统的切面与异常机制： 
+* **滑动窗口限流：** 基于 Caffeine 缓存实现按用户维度的双层限流（秒级 3 次 + 分钟级 10 次），防止个别用户刷爆 AI 接口（见 `AiRateLimiter`）
+* **三态熔断器：** CLOSED → OPEN → HALF_OPEN 状态机，连续 5 次失败后熔断 30 秒，之后放 2 个探测请求，成功则恢复，失败则继续熔断（见 `AiCircuitBreaker`）
+* **自动降级：** AI 微服务不可用时，自动降级到本地 `FallbackRagServiceImpl`，返回引导性提示，前端展示降级模式标识（见 `AiController`）
+* **会话归属校验：** 校验 `conversation_id` 的用户前缀，防止越权访问他人对话记录
 
-* **跨线程上下文传递的 AOP 日志：** 自定义 `@Log` 注解结合 Spring AOP，并利用 `CompletableFuture` 实现日志全异步落库。在主线程提前捕获 Sa-Token 的 `ThreadLocal` 身份上下文，解决异步线程数据丢失问题，保障业务接口 100% 纯净与低延迟 (见 `LogAspect`)。 
-* **异常脱敏与全局防御：** 统一定义 `GlobalExceptionHandler`，拦截 JSR-303 参数校验与业务异常。对于未知的 500 系统崩溃，向前端统一掩蔽为“系统繁忙”，将完整堆栈截留至后端日志，杜绝服务器物理目录与 SQL 结构泄露风险。 
+### 4. 提示词三级缓存：热更新不写死 Prompt
 
-### 5.  [云原生交付] 容器化部署闭环
+AI 的 Prompt 不写死在代码里，而是基于 Redis + Caffeine + MySQL 做了三级缓存，管理员在后台修改后秒级生效：
 
-* 编写了具备多阶段构建的前后端 `Dockerfile`。 
-*  `docker-compose.yml` 配合 `init.sql` 实现 MySQL 数据库的冷启动自动初始化。一键拉起包括 Redis Stack、RabbitMQ、Nginx 反向代理在内的整套微服务矩阵。
+* **L1 Redis：** 分布式缓存，管理员修改时清空 key 触发热重载
+* **L2 Caffeine：** JVM 本地缓存，Redis 不可用时兜底
+* **L3 MySQL：** 持久化存储，缓存全部未命中时回源
+* **降级兜底：** 获取锁超时时走 Caffeine，再没有数据则返回内置通用模板（见 `SysPromptServiceImpl`）
 
-### **6. [性能基准] 本地单机压测表现**
+### 5. 零侵入异步审计日志
 
-受限于个人本地单节点开发机的硬件瓶颈（16核 32G 内存），在单机部署环境下进行压测：
+用自定义 `@Log` 注解 + Spring AOP 实现操作日志自动记录，不侵入业务代码：
 
-- **并发削峰验证：** 模拟 5000 个 IoT 终端并发上报温度数据，通过 RabbitMQ 缓冲，MySQL 写入 QPS 稳定在 800+，无任何死锁与连接池耗尽现象，消息零丢失。
-- **大屏防击穿验证：** 使用 Jmeter 开启 1000 个并发线程同时请求大屏数据接口，命中 Redisson 分布式锁拦截，仅 1 个线程穿透至数据库执行 SQL，其余 999 个线程在 30ms 内从 Redis 成功获取缓存，接口平均响应时间控制在 50ms 以内。
+* **全异步落库：** 在 `LogAspect` 中用 `CompletableFuture.runAsync()` 异步写日志，主线程不等待
+* **跨线程身份传递：** 在主线程提前从 Sa-Token 的 ThreadLocal 拿到用户身份，传给异步任务，解决异步线程拿不到登录信息的问题
+* **异常脱敏：** `GlobalExceptionHandler` 拦截所有异常，500 错误向前端只返回"系统繁忙"，完整堆栈留在后端日志，不暴露服务器路径和 SQL 结构
+
+### 6. 内部接口安全防护
+
+AI 微服务回调 Java 后端的内部接口（设备状态查询、故障分析等）需要安全隔离：
+
+* **密钥校验：** `InternalApiInterceptor` 校验请求头中的 `X-Internal-Secret`，防止外部直接访问 `/api/internal/**` 接口
+* **AI 请求链路追踪：** BFF 层为每个 AI 请求注入 `X-Trace-Id`，便于全链路排查
+
+---
+
+## 工程结构
+
+```
+monitor-system/
+├── src/main/java/org/example/monitorsystem/
+│   ├── MonitorSystemApplication.java         # 启动类
+│   ├── core/
+│   │   ├── database/                         # MyBatis-Plus 配置 & 自动填充
+│   │   ├── exception/                        # 统一异常体系 (BusinessException + GlobalExceptionHandler)
+│   │   ├── security/                         # Sa-Token 配置 / AI 限流器 / AI 熔断器 / 内部接口拦截
+│   │   └── web/                              # 统一响应封装 (Result)
+│   └── modules/
+│       ├── device/                            # 设备模块
+│       │   ├── config/RabbitMqConfig.java     #   MQ 交换机/队列/绑定配置
+│       │   ├── controller/
+│       │   │   ├── DeviceController.java      #   设备查询/分页/告警接口
+│       │   │   └── IotMockController.java     #   IoT 网关数据上报入口
+│       │   ├── mq/DeviceMessageReceiver.java  #   MQ 消费者 (手动ACK + Redis双写 + 告警生成)
+│       │   ├── service/impl/
+│       │   │   ├── DeviceInfoServiceImpl.java #   设备查询 (Redisson DCL 防击穿)
+│       │   │   ├── DeviceMetricServiceImpl.java
+│       │   │   └── DeviceAlertServiceImpl.java
+│       │   ├── entity/                        #   设备/指标/告警实体
+│       │   ├── mapper/                        #   MyBatis-Plus Mapper
+│       │   └── model/                         #   DTO / VO
+│       ├── ai/                                # AI 代理模块
+│       │   ├── controller/
+│       │   │   ├── AiController.java          #   AI 聊天 BFF (SSE 代理 + 限流 + 熔断 + 降级)
+│       │   │   ├── InternalDeviceController.java  # 内部接口: 设备状态查询
+│       │   │   ├── InternalFaultController.java   # 内部接口: 故障分析
+│       │   │   └── InternalMaintenanceController.java # 内部接口: 维修进度
+│       │   ├── service/
+│       │   │   ├── IRagService.java           #   RAG 服务接口
+│       │   │   └── FallbackRagServiceImpl.java#   降级实现
+│       │   └── entity/                        #   故障报告/维修工单实体
+│       └── system/                            # 系统管理模块
+│           ├── auth/                          #   认证 (Sa-Token 登录/注册)
+│           ├── log/                           #   审计日志 (@Log 注解 + AOP 异步落库)
+│           └── prompt/                        #   提示词管理 (三级缓存 + 热更新)
+├── src/main/resources/
+│   ├── application.yml                        # 主配置
+│   ├── application-dev.yml                    # 开发环境
+│   └── application-prod.yml                   # 生产环境
+└── pom.xml
+```
+
+---
+
+## AI 微服务对接
+
+本项目的智能排障能力由独立的 AI 微服务提供（基于 FastAPI + LangChain + LangGraph），Java 后端通过以下方式与之交互：
+
+* **SSE 流式转发：** 前端请求 `/api/ai/ask`，Java 后端用 WebFlux WebClient 透传到 AI 微服务的 `/api/ai/ask`，流式返回 SSE 事件
+* **内部 API 回调：** AI 微服务通过 `/api/internal/**` 接口回调 Java 后端，实时查询设备状态、告警记录、维修进度等业务数据
+* **提示词回源：** AI 微服务启动时和运行时通过 HTTP 回调 Java 端获取最新的系统提示词
+
+AI 微服务的详细技术文档见 [ai-service/README.md](ai-service/README.md)。
 
 ---
 
 ## 快速启动
 
-本项目采用工程化设计，支持基于 `docker-compose` 的全栈一键拉起，无需在宿主机配置复杂的开发环境。
-
 ### 1. 环境准备
-* 安装 [Docker](https://www.docker.com/) 和 [Docker Compose](https://docs.docker.com/compose/)。
+* 安装 [Docker](https://www.docker.com/) 和 [Docker Compose](https://docs.docker.com/compose/)
 
 ### 2. 配置环境变量
-在项目根目录创建 `.env` 文件，并填入大模型的 API Key：
+在项目根目录创建 `.env` 文件：
 ```env
-# 智谱 AI API Key
-ZHIPU_API_KEY=你的真实_API_KEY
+# 大模型 API Key (必填，根据 MODEL_PROVIDER 选择对应的 Key)
+ZHIPU_API_KEY=你的_API_KEY
+
+# 模型供应商 (可选，默认 zhipu，支持: zhipu / wenxin / tongyi / pangu / deepseek / spark)
+MODEL_PROVIDER=zhipu
+
+# 微服务间通信密钥
+INTERNAL_API_SECRET=你的内部通信密钥
+```
+
+### 3. 一键启动
+```bash
+docker-compose up -d
+```
+
+### 4. 访问服务
+| 服务 | 地址 |
+|------|------|
+| 监控大屏 (前端) | http://localhost |
+| Java 后端 API | http://localhost:8080 |
+| AI 微服务 | http://localhost:8000 |
+| RabbitMQ 管理面板 | http://localhost:15672 |
+
+---
+
+## 压测数据
+
+受限于本地单机环境（16 核 32G），在单节点部署下测试：
+
+- **并发削峰：** 模拟 5000 个 IoT 终端并发上报温度数据，通过 RabbitMQ 缓冲后 MySQL 写入 QPS 稳定在 800+，无死锁和连接池耗尽，消息零丢失
+- **大屏防击穿：** 1000 个并发线程同时请求大屏数据接口，Redisson 分布式锁拦截后仅 1 个线程穿透到数据库，其余 999 个线程 30ms 内从 Redis 获取缓存，接口平均响应 50ms 以内

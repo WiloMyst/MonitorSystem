@@ -10,6 +10,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * 设备管理控制器
+ * 提供设备信息的分页查询、详情查看等 CRUD 接口。
+ */
 @CrossOrigin
 @RestController
 @RequestMapping("/api/device")

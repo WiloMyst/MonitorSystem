@@ -1,3 +1,7 @@
+<!--
+  登录页
+  调用后端 /auth/login 接口获取 Sa-Token，存入 Pinia 和 localStorage 后跳转仪表盘。
+-->
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -16,21 +20,15 @@ const handleLogin = async () => {
     ElMessage.warning('请输入账号和密码')
     return
   }
-  
+
   loading.value = true
   try {
-    // 1. 调用后端接口获取 Token
     const token = await loginApi(loginForm.value)
-    
-    // 2. 存入 Pinia 状态机
     userStore.setToken(token, loginForm.value.username)
-    
     ElMessage.success('登录成功')
-    
-    // 3. 页面跳转到控制台大屏
     router.push('/')
   } catch (error) {
-    // 错误在 request.ts 中已经统一拦截提示，这里只需捕获即可
+    // 错误已在 request.ts 响应拦截器中统一提示
   } finally {
     loading.value = false
   }
@@ -76,7 +74,7 @@ const handleLogin = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: #2d3a4b; /* 国企偏爱的沉稳蓝黑底色 */
+  background-color: #2d3a4b;
 }
 .login-card {
   width: 400px;

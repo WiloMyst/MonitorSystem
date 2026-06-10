@@ -9,36 +9,35 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * RabbitMQ 配置类
+ * 定义设备数据上报的消息队列拓扑:
+ *   Exchange: device.topic.exchange (Topic 类型)
+ *   Queue: device.temperature.queue (持久化)
+ *   BindingKey: device.temp.# (匹配所有 device.temp 开头的路由键)
+ */
 @Configuration
 public class RabbitMqConfig {
 
-    // 1. 定义交换机名称 (路由器)
     public static final String DEVICE_EXCHANGE = "device.topic.exchange";
-    // 2. 定义队列名称 (存放温度上报数据的容器)
     public static final String TEMPERATURE_QUEUE = "device.temperature.queue";
-    // 3. 定义通配符路由键 (Binding Key)
-    // 只要是 device.temp 开头的消息，全都扔进这个温度队列里
     public static final String BINDING_KEY = "device.temp.#";
 
-    // 注入 JSON 消息转换器，这样存入 MQ 的就是明文 JSON，再也没有安全拦截和乱码问题
     @Bean
     public MessageConverter jsonMessageConverter() {
         return new Jackson2JsonMessageConverter();
     }
 
-    // 声明队列 (true 表示持久化，重启服务器队列还在)
     @Bean
     public Queue temperatureQueue() {
         return new Queue(TEMPERATURE_QUEUE, true);
     }
 
-    // 声明交换机
     @Bean
     public TopicExchange deviceExchange() {
         return new TopicExchange(DEVICE_EXCHANGE);
     }
 
-    // 将队列和交换机通过 RoutingKey 绑定起来
     @Bean
     public Binding bindingTemperatureQueue() {
         return BindingBuilder.bind(temperatureQueue()).to(deviceExchange()).with(BINDING_KEY);

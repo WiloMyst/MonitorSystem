@@ -30,22 +30,10 @@ spring:
       simple:
         acknowledge-mode: manual
 
-  # AI 配置 (本地开发直接用你的 Key)
-  ai:
-    zhipuai:
-      api-key: ${ZHIPU_API_KEY} # Spring 启动时会去系统环境里找这个变量
-      chat:
-        options:
-          model: glm-4-flash
-      embedding:
-        options:
-          model: embedding-2
-    # RAG 向量库配置
-    vectorstore:
-      redis:
-        uri: redis://:123456@127.0.0.1:6379/
-        index: monitor_manual_index
-        prefix: "rag:doc:"
+# AI 微服务地址
+ai-service:
+  url: ${AI_SERVICE_URL:http://127.0.0.1:8000}
+  internal-secret: ${AI_SERVICE_INTERNAL_SECRET:}
 
 # MyBatis-Plus 日志配置 (开发环境打印 SQL 到控制台)
 mybatis-plus:

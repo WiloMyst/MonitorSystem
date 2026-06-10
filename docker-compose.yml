@@ -1,11 +1,9 @@
 version: '3.8'
 
-# 定义网络，让所有容器在同一个内网里互相通信
 networks:
   monitor_net:
     driver: bridge
 
-# 定义数据卷，保证数据库和中间件重启后数据不丢失（极其重要的企业级规范！）
 volumes:
   mysql_data:
   redis_data:
@@ -17,7 +15,6 @@ services:
     container_name: monitor-mysql
     restart: always
     environment:
-      # 这里配置的密码，后端 application-prod.yml 会自动读取
       MYSQL_ROOT_PASSWORD: 123456
       MYSQL_DATABASE: monitor_system
       TZ: Asia/Shanghai
@@ -25,7 +22,7 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql # 这个文件会在容器第一次启动时自动执行，创建表结构和初始数据
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - monitor_net
 
@@ -35,7 +32,6 @@ services:
     container_name: monitor-redis-stack
     restart: always
     environment:
-      # 设置 Redis 密码
       REDIS_ARGS: "--requirepass 123456"
       TZ: Asia/Shanghai
     ports:
@@ -47,7 +43,6 @@ services:
 
   # ================= 3. 消息队列 (硬件高并发缓冲) =================
   rabbitmq:
-    # 使用带 management 的版本，自带一个精美的浏览器监控后台
     image: rabbitmq:3-management
     container_name: monitor-rabbitmq
     restart: always
@@ -56,15 +51,15 @@ services:
       RABBITMQ_DEFAULT_PASS: 123456
       TZ: Asia/Shanghai
     ports:
-      - "5672:5672"   # 代码通信端口
-      - "15672:15672" # 浏览器后台管理端口
+      - "5672:5672"
+      - "15672:15672"
     networks:
       - monitor_net
 
-  # ================= 4. Java 核心后端 =================
+  # ================= 4. Java 核心后端 (BFF + 业务) =================
   monitor-backend:
     build: 
-      context: ./monitor-system  # 指向你的后端代码目录，它会去寻找 Dockerfile
+      context: ./monitor-system
     container_name: monitor-backend
     restart: always
     depends_on:
@@ -72,31 +67,63 @@ services:
       - redis-stack
       - rabbitmq
     environment:
-      # 切换到生产环境配置
       - SPRING_PROFILES_ACTIVE=prod
-      # 注入环境依赖的宿主机名（指向上面定义的容器）
       - DB_HOST=mysql-db
       - DB_PASSWORD=123456
       - REDIS_HOST=redis-stack
       - REDIS_PASSWORD=123456
       - MQ_HOST=rabbitmq
       - MQ_PASSWORD=123456
-      - ZHIPU_API_KEY=${ZHIPU_API_KEY} # 智谱 AI Key，让 Docker 从宿主机的 .env 文件中读取并传给容器
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - AI_SERVICE_URL=http://ai-service:8000
+      - AI_SERVICE_INTERNAL_SECRET=${INTERNAL_API_SECRET:-}
       - TZ=Asia/Shanghai
     ports:
       - "8080:8080"
     networks:
       - monitor_net
 
-  # ================= 5. Vue 监控大屏前端 =================
+  # ================= 5. Python AI 微服务 =================
+  ai-service:
+    build:
+      context: ./ai-service
+    container_name: monitor-ai-service
+    restart: always
+    depends_on:
+      - redis-stack
+      - monitor-backend
+    environment:
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-zhipu}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - ZHIPU_BASE_URL=${ZHIPU_BASE_URL:-https://open.bigmodel.cn/api/paas/v4/}
+      - CHAT_MODEL=${CHAT_MODEL:-glm-4-flash}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-embedding-2}
+      - REDIS_URL=redis://:123456@redis-stack:6379/0
+      - REDIS_INDEX_NAME=monitor_manual_index
+      - JAVA_BACKEND_URL=http://monitor-backend:8080
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-}
+      - MYSQL_HOST=mysql-db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=123456
+      - MYSQL_DATABASE=monitor_system
+      - SECURITY_PROMPT_INJECTION_DEFENSE=${SECURITY_PROMPT_INJECTION_DEFENSE:-true}
+      - SECURITY_SENSITIVE_WORD_FILTER=${SECURITY_SENSITIVE_WORD_FILTER:-true}
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./ai-service/resources/docs:/app/resources/docs
+    networks:
+      - monitor_net
+
+  # ================= 6. Vue 监控大屏前端 =================
   monitor-frontend:
     build: 
-      context: ./monitor-system-ui # 指向你的前端代码目录
+      context: ./monitor-system-ui
     container_name: monitor-frontend
     restart: always
     depends_on:
       - monitor-backend
     ports:
-      - "80:80" # 前端直接暴露在 80 端口，浏览器不用输端口号直接访问
+      - "80:80"
     networks:
       - monitor_net
