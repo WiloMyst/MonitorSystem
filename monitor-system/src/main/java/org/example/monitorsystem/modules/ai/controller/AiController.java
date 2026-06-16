@@ -29,6 +29,16 @@ import java.util.UUID;
  *   3. 降级: AI 微服务不可用时降级到本地 Spring AI RAG
  *   4. 安全: 校验 conversation_id 用户归属，防止越权
  *   5. 链路追踪: 注入 traceId 便于全链路排查
+ *
+ * 线程模型与防阻塞说明:
+ *   本控制器运行在 Servlet 容器 (Tomcat) 中，但 SSE 流式转发全链路基于 Reactor 响应式流:
+ *   - 返回类型为 Flux<ServerSentEvent<String>>，Spring MVC 在 Servlet 环境下
+ *     会自动通过 ResponseBodyEmitter 适配，将 Reactor 信号异步写入 HTTP 响应
+ *   - WebClient 调用 AI 微服务时使用 bodyToFlux()，数据在 Reactor Netty 的
+ *     EventLoop 线程中接收，通过 Reactor 背压机制逐条推送到 Tomcat 的 I/O 线程
+ *   - 全链路绝对没有使用 .block()，保证 Tomcat 工作线程在发送 SSE 请求后立即释放，
+ *     不会因等待 AI 微服务响应而阻塞，从而实现单线程处理多个并发 SSE 连接
+ *   - 限流/熔断判断在 Flux 构建前完成（同步判断），不涉及阻塞等待
  */
 @CrossOrigin
 @RestController
